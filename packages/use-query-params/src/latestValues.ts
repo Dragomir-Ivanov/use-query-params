@@ -10,7 +10,7 @@ import shallowEqual from './shallowEqual';
  * Helper to get the latest decoded values with smart caching.
  * Abstracted into its own function to allow re-use in a functional setter (#26)
  */
-export function getLatestDecodedValues<QPCMap extends QueryParamConfigMap>(
+export function getDecodedValues<QPCMap extends QueryParamConfigMap>(
   parsedParams: EncodedQuery,
   paramConfigMap: QPCMap,
   decodedParamCache: DecodedParamCache
@@ -72,7 +72,7 @@ export function getLatestDecodedValues<QPCMap extends QueryParamConfigMap>(
  * Wrap get latest so we use the same exact object if the current
  * values are shallow equal to the previous.
  */
-export function makeStableGetLatestDecodedValues() {
+export function makeStableGetDecodedValues() {
   let prevDecodedValues: DecodedValueMap<any> | undefined;
 
   function stableGetLatest<QPCMap extends QueryParamConfigMap>(
@@ -80,8 +80,68 @@ export function makeStableGetLatestDecodedValues() {
     paramConfigMap: QPCMap,
     decodedParamCache: DecodedParamCache
   ) {
-    const decodedValues = getLatestDecodedValues(
+    const decodedValues = getDecodedValues(
       parsedParams,
+      paramConfigMap,
+      decodedParamCache
+    );
+    if (
+      prevDecodedValues != null &&
+      shallowEqual(prevDecodedValues, decodedValues)
+    ) {
+      return prevDecodedValues;
+    }
+    prevDecodedValues = decodedValues;
+    return decodedValues;
+  }
+
+  return stableGetLatest;
+}
+
+/**
+ * Helper to get the latest decoded values with smart caching.
+ * Abstracted into its own function to allow re-use in a functional setter (#26)
+ */
+export function getLatestDecodedValues<QPCMap extends QueryParamConfigMap>(
+  paramConfigMap: QPCMap,
+  decodedParamCache: DecodedParamCache
+) {
+  const decodedValues: Partial<DecodedValueMap<QPCMap>> = {};
+
+  // we have new encoded values, so let's get new decoded values.
+  // recompute new values but only for those that changed
+  const paramNames = Object.keys(paramConfigMap);
+  for (const paramName of paramNames) {
+    // do we have a new encoded value?
+    const paramConfig = paramConfigMap[paramName];
+
+    // if we have a new encoded value, re-decode. otherwise reuse cache
+    let decodedValue = decodedParamCache.get(paramName);
+
+    // in case the decode function didn't interpret `default` for some reason,
+    // we can interpret it here as a backup
+    if (decodedValue === undefined && paramConfig.default !== undefined) {
+      decodedValue = paramConfig.default;
+    }
+
+    decodedValues[paramName as keyof QPCMap] = decodedValue;
+  }
+
+  return decodedValues as DecodedValueMap<QPCMap>;
+}
+
+/**
+ * Wrap get latest so we use the same exact object if the current
+ * values are shallow equal to the previous.
+ */
+export function makeStableGetLatestDecodedValues() {
+  let prevDecodedValues: DecodedValueMap<any> | undefined;
+
+  function stableGetLatest<QPCMap extends QueryParamConfigMap>(
+    paramConfigMap: QPCMap,
+    decodedParamCache: DecodedParamCache
+  ) {
+    const decodedValues = getLatestDecodedValues(
       paramConfigMap,
       decodedParamCache
     );

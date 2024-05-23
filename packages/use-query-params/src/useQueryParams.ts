@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSyncExternalStore } from 'use-sync-external-store/shim';
 import {
   DecodedValueMap,
   QueryParamConfig,
@@ -10,7 +11,6 @@ import {
   extendParamConfigForKeys,
   convertInheritedParamStringsToParams,
 } from './inheritedParams';
-import { makeStableGetLatestDecodedValues } from './latestValues';
 import { memoSearchStringToObject } from './memoSearchStringToObject';
 import { mergeOptions, QueryParamOptions } from './options';
 import { useQueryParamContext } from './QueryParamProvider';
@@ -21,6 +21,10 @@ import {
 } from './types';
 import { enqueueUpdate } from './updateSearchString';
 import { serializeUrlNameMap } from './urlName';
+import {
+  makeStableGetDecodedValues,
+  makeStableGetLatestDecodedValues,
+} from './latestValues';
 
 // for multiple param config
 type ChangesType<DecodedValueMapType> =
@@ -62,7 +66,10 @@ export function useQueryParams(
   arg2?: QueryParamConfig<any> | QueryParamOptions
 ): UseQueryParamsResult<any> {
   const { adapter, options: contextOptions } = useQueryParamContext();
-  const [stableGetLatest] = useState(makeStableGetLatestDecodedValues);
+  const [stableGetDecodedValues] = useState(makeStableGetDecodedValues);
+  const [stableGetLatestDecodedValues] = useState(
+    makeStableGetLatestDecodedValues
+  );
 
   // intepret the overloaded arguments
   const { paramConfigMap: paramConfigMapWithInherit, options } = parseArguments(
@@ -97,12 +104,16 @@ export function useQueryParams(
     );
   }
 
-  // run decode on each key
-  const decodedValues = stableGetLatest(
-    parsedParams,
-    paramConfigMap,
-    decodedParamCache
-  );
+  const getDecodedValues = useCallback(() => {
+    const decodedValues = stableGetLatestDecodedValues(
+      paramConfigMap,
+      decodedParamCache
+    );
+    return decodedValues;
+  }, [stableGetLatestDecodedValues, paramConfigMap]);
+  const values =
+    useSyncExternalStore(notifyChange, getDecodedValues) ||
+    stableGetDecodedValues(parsedParams, paramConfigMap, decodedParamCache);
 
   // clear out unused values in cache
   // use string for relatively stable effect dependency
@@ -160,7 +171,7 @@ export function useQueryParams(
     return setQuery;
   });
 
-  return [decodedValues, setQuery];
+  return [values, setQuery];
 }
 
 export default useQueryParams;
@@ -194,4 +205,9 @@ function parseArguments(
   }
 
   return { paramConfigMap, options };
+}
+
+function notifyChange(callback: () => void) {
+  decodedParamCache.subscribe(callback);
+  return () => decodedParamCache.unsubscribe(callback);
 }

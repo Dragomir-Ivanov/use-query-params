@@ -15,10 +15,24 @@ type CachedParam = {
 export class DecodedParamCache {
   private paramsMap: Map<string, CachedParam>;
   private registeredParams: Map<string, number>;
+  private notifiers = new Set<() => void>();
 
   constructor() {
     this.paramsMap = new Map();
     this.registeredParams = new Map();
+    this.notifiers = new Set();
+  }
+
+  subscribe(listener: () => void) {
+    this.notifiers.add(listener);
+  }
+
+  unsubscribe(listener: () => void) {
+    this.notifiers.delete(listener);
+  }
+
+  notify() {
+    this.notifiers.forEach((listener) => listener());
   }
 
   set(

@@ -5,7 +5,7 @@ import {
 } from 'serialize-query-params';
 import { decodedParamCache } from './decodedParamCache';
 import { extendParamConfigForKeys } from './inheritedParams';
-import { getLatestDecodedValues } from './latestValues';
+import { getDecodedValues } from './latestValues';
 import { memoSearchStringToObject } from './memoSearchStringToObject';
 import { QueryParamOptionsWithRequired } from './options';
 import { removeDefaults } from './removeDefaults';
@@ -58,7 +58,7 @@ export function getUpdatedSearchString({
 
   // functional updates here get the latest values
   if (typeof changes === 'function') {
-    const latestValues = getLatestDecodedValues(
+    const latestValues = getDecodedValues(
       parsedParams,
       paramConfigMap,
       decodedParamCache
@@ -71,6 +71,20 @@ export function getUpdatedSearchString({
   }
 
   encodedChanges = encodeQueryParams(paramConfigMap, changesToUse);
+
+  // Put values in decodedParamsCache
+  const paramNames = Object.keys(paramConfigMap);
+  for (const paramName of paramNames) {
+    const paramConfig = paramConfigMap[paramName];
+    const encodedValue = encodedChanges[paramName];
+    const decodedValue = changesToUse[paramName];
+    decodedParamCache.set(
+      paramName,
+      encodedValue,
+      decodedValue,
+      paramConfig.decode
+    );
+  }
 
   // remove defaults
   if (options.removeDefaultsFromUrl) {
@@ -180,6 +194,9 @@ export function enqueueUpdate(
         navigate: true,
         updateType: updates[updates.length - 1].updateType,
       });
+
+      // Notify any subscribers here
+      decodedParamCache.notify();
     });
   }
 }
